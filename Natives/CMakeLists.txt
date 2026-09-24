@@ -184,6 +184,10 @@ endif()
 target_link_libraries(AngelAuraAmethyst
   PUBLIC AFNetworking
   lzma
+  # UIKit+hook.h 中 weak_import 声明的私有符号(如 _UISolariumEnabled)在旧版 SDK 里没有实现,
+  # 源码已做判空保护, 允许链接期动态查找以免 ld 直接报未定义符号。
+  "-Wl,-U,__UISolariumEnabled"
+  "-Wl,-undefined,dynamic_lookup"
   "-F'${CMAKE_CURRENT_LIST_DIR}/build'"
   "-F'${CMAKE_CURRENT_LIST_DIR}/resources/Frameworks'"
   "-framework AltKit"
