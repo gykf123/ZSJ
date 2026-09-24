@@ -19,31 +19,71 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew install make cmake openjdk@17 || true
-          # ldid：iOS 自签工具（无需 Apple 开发者证书）。优先用预编译二进制。
-          if ! command -v ldid >/dev/null 2>&1; then
-            curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_x86_64" -o /usr/local/bin/ldid 2>/dev/null \
-            || curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64" -o /usr/local/bin/ldid 2>/dev/null \
-            || true
-            chmod +x /usr/local/bin/ldid 2>/dev/null || true
-          fi
-          echo "/usr/local/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          set -e
+          brew install make cmake openjdk@8 openjdk@17 wget ldid
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Get JRE8
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build.yml
+          path: depends
+          workflow_conclusion: success
+          allow_forks: false
+          repo: PojavLauncherTeam/android-openjdk-build-multiarch
+          branch: buildjre8
+          name: jre8-ios-aarch64
+
+      - name: Get JRE17
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build.yml
+          path: depends
+          workflow_conclusion: completed
+          allow_forks: false
+          repo: PojavLauncherTeam/android-openjdk-build-multiarch
+          branch: buildjre17-21
+          name: jre17-ios-aarch64
+
+      - name: Get JRE21
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build.yml
+          path: depends
+          workflow_conclusion: completed
+          allow_forks: false
+          repo: PojavLauncherTeam/android-openjdk-build-multiarch
+          branch: buildjre17-21
+          name: jre21-ios-aarch64
 
       - name: Build for iOS
         run: |
           export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-          export JAVA_HOME="$(brew --prefix openjdk@17 2>/dev/null || /usr/libexec/java_home -v 17 || "")"
-          export SLIMMED=1
+          export RUNNER=1 SLIMMED=1
+          export BOOTJDK="$(brew --prefix openjdk@8)/libexec/openjdk.jdk/Contents/Home/bin"
           gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2
           gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 TROLLSTORE_JIT_ENT=1
 
-      - name: Upload artifacts
+      - name: Upload ipa
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: amethyst-ios
-          path: |
-            artifacts/**/*.ipa
-            artifacts/**/*.tipa
-            artifacts/**/*.dSYM
+          name: amethyst-ios-ipa
+          path: artifacts/org.angelauramc.amethyst*ios.ipa
+          if-no-files-found: error
+
+      - name: Upload trollstore tipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: amethyst-ios-trollstore-tipa
+          path: artifacts/*trollstore.tipa
+          if-no-files-found: error
+
+      - name: Upload dSYM
+        uses: actions/upload-artifact@v4
+        with:
+          name: amethyst-ios-dsym
+          path: artifacts/*.dSYM
+          if-no-files-found: ignore
