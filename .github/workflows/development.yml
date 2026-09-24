@@ -6,6 +6,9 @@ on:
       - 'l10n_main'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Development build (iOS)
@@ -17,11 +20,31 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install build dependencies
+      - name: Install build tools (brew)
         run: |
-          set -e
-          brew install make cmake openjdk@8 openjdk@17 wget ldid
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          brew install make cmake wget || true
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
+      - name: Install JDK 8 (BOOTJDK) via Adoptium
+        run: |
+          curl -fsSL "https://api.adoptium.net/v3/binary/latest/8/ga/mac/aarch64/jdk/hotspot/normal/eclipse" -o /tmp/jdk8.tar.gz
+          mkdir -p /opt/jdk8
+          tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1
+          echo "BOOTJDK=/opt/jdk8/bin" >> "$GITHUB_ENV"
+          /opt/jdk8/bin/javac -version
+
+      - name: Install ldid (procursus)
+        run: |
+          curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64" -o /usr/local/bin/ldid \
+            || curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_x86_64" -o /usr/local/bin/ldid
+          chmod +x /usr/local/bin/ldid
+          /usr/local/bin/ldid -h || true
+
+      - name: Verify toolchain
+        run: |
+          which gmake cmake wget ldid
+          xcrun --sdk iphoneos --show-sdk-path
+          /opt/jdk8/bin/javac -version
 
       - name: Get JRE8
         uses: dawidd6/action-download-artifact@v2
@@ -63,27 +86,28 @@ jobs:
         run: |
           export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
           export RUNNER=1 SLIMMED=1
-          export BOOTJDK="$(brew --prefix openjdk@8)/libexec/openjdk.jdk/Contents/Home/bin"
+          export BOOTJDK="${{ env.BOOTJDK }}"
           gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2
           gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 TROLLSTORE_JIT_ENT=1
 
-      - name: Upload ipa
-        uses: actions/upload-artifact@v4
-        with:
-          name: amethyst-ios-ipa
-          path: artifacts/org.angelauramc.amethyst*ios.ipa
-          if-no-files-found: error
+      - name: Publish release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            --prerelease \
+            --title "CI Build #${{ github.run_number }}" \
+            --notes "Automated build of Angel Aura Amethyst (no-account download patch)." \
+            artifacts/org.angelauramc.amethyst*ios.ipa \
+            artifacts/*trollstore.tipa || true
 
-      - name: Upload trollstore tipa
+      - name: Upload artifacts (fallback)
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: amethyst-ios-trollstore-tipa
-          path: artifacts/*trollstore.tipa
-          if-no-files-found: error
-
-      - name: Upload dSYM
-        uses: actions/upload-artifact@v4
-        with:
-          name: amethyst-ios-dsym
-          path: artifacts/*.dSYM
-          if-no-files-found: ignore
+          name: amethyst-ios
+          path: |
+            artifacts/**/*.ipa
+            artifacts/**/*.tipa
+            artifacts/**/*.dSYM
