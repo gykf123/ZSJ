@@ -25,13 +25,23 @@ jobs:
           brew install make cmake wget || true
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
-      - name: Install JDK 8 (BOOTJDK) via Adoptium x64
+      - name: Install JDK 8 (BOOTJDK)
         run: |
-          curl -fsSL "https://api.adoptium.net/v3/binary/latest/8/ga/mac/x64/jdk/hotspot/normal/eclipse" -o /tmp/jdk8.tar.gz
-          mkdir -p /opt/jdk8
-          tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1
-          echo "BOOTJDK=/opt/jdk8/bin" >> "$GITHUB_ENV"
-          /opt/jdk8/bin/javac -version
+          set +e
+          JAVAC=""
+          if [ -z "$JAVAC" ]; then
+            curl -fsSL "https://corretto.aws/downloads/latest/amazon-corretto-8-x64-macos-jdk.tar.gz" -o /tmp/jdk8.tar.gz \
+              && mkdir -p /opt/jdk8src && tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8src \
+              && JAVAC="$(find /opt/jdk8src -name javac -type f | head -1)"
+          fi
+          if [ -z "$JAVAC" ]; then
+            brew install openjdk@8 >/dev/null 2>&1
+            PREFIX="$(brew --prefix openjdk@8 2>/dev/null)"
+            JAVAC="$(find "$PREFIX" -name javac -type f 2>/dev/null | head -1)"
+          fi
+          if [ -z "$JAVAC" ] || [ ! -x "$JAVAC" ]; then echo "::error::JDK8 not found"; exit 1; fi
+          echo "BOOTJDK=$(dirname "$JAVAC")" >> "$GITHUB_ENV"
+          "$JAVAC" -version
 
       - name: Install ldid (procursus)
         run: |
