@@ -28,24 +28,40 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
 
-      - name: Install JDK 8 (Zulu aarch64 native)
+      - name: Install JDK 8 (BOOTJDK)
         run: |
-          set -e
-          for u in \
-            "https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-jdk8.0.504-macosx_aarch64.tar.gz" \
-            "https://cdn.azul.com/zulu/bin/zulu8.94.0.17-ca-jdk8.0.492-macosx_aarch64.tar.gz"; do
-            echo "try: $u"
-            if curl -fsSL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 1800 "$u" -o /tmp/jdk8.tar.gz; then
-              break
+          {
+          set +e
+          try_jdk() {
+            url="$1"
+            echo "------ try: $url"
+            rm -f /tmp/jdk8.tar.gz
+            curl -L --retry 3 --connect-timeout 30 --max-time 1800 \
+                 -w "\nHTTP=%{http_code} SIZE=%{size_download}\n" \
+                 "$url" -o /tmp/jdk8.tar.gz
+            if [ ! -s /tmp/jdk8.tar.gz ]; then echo "=> download failed/empty"; return 1; fi
+            ls -l /tmp/jdk8.tar.gz
+            rm -rf /opt/jdk8; mkdir -p /opt/jdk8
+            tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1 || tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 || return 1
+            JC="$(find /opt/jdk8 -type f -name javac -perm -u+x 2>/dev/null | head -1)"
+            echo "=> found javac: ${JC:-NONE}"
+            if [ -n "$JC" ] && "$JC" -version 2>&1 | grep -q '1\.8'; then
+              echo "BOOTJDK=$(dirname "$JC")" >> "$GITHUB_ENV"
+              echo "=> OK"; "$JC" -version; return 0
             fi
-          done
-          ls -l /tmp/jdk8.tar.gz
-          rm -rf /opt/jdk8 && mkdir -p /opt/jdk8
-          tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1
-          JDK="/opt/jdk8/bin"
-          echo "BOOTJDK=$JDK" >> "$GITHUB_ENV"
-          export BOOTJDK="$JDK"
-          "$JDK/javac" -version
+            echo "=> javac missing or not 1.8"; return 1
+          }
+          try_jdk "https://github.com/Tencent/TencentKona-8/releases/download/8.0.27-GA/TencentKona8.0.27.b1_jdk_macosx-aarch64_8u502_notarized.tar.gz" \
+            || try_jdk "https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-jdk8.0.504-macosx_aarch64.tar.gz" \
+            || try_jdk "https://cdn.azul.com/zulu/bin/zulu8.94.0.17-ca-jdk8.0.492-macosx_aarch64.tar.gz" \
+            || { echo "=> fall back to brew"; brew install openjdk@8 2>&1 | tail -5; }
+          set -e
+          if [ -z "$BOOTJDK" ]; then
+            echo "::error::JDK8 unavailable"
+          else
+            "$BOOTJDK/javac" -version
+          fi
+          } 2>&1 | tee "$RUNNER_TEMP/jdk.log"
 
       - name: Ensure ldid
         run: |
@@ -87,22 +103,26 @@ jobs:
           echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH"
           gmake -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
 
-      - name: Upload diagnostics (public release)
+      - name: Publish diagnostics (public release notes)
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          D="$RUNNER_TEMP/diag.txt"
+          D="$RUNNER_TEMP/diag_part.txt"
           {
-            echo "=== toolchain ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
-            echo "=== artifacts tree ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
-            echo "=== depends tree ==="; ls -la depends 2>/dev/null | head -30
-            echo "=== build log tail 300 ==="; tail -n 300 "$RUNNER_TEMP/build.log" 2>/dev/null
+            echo "=== JDK INSTALL LOG ==="; cat "$RUNNER_TEMP/jdk.log" 2>/dev/null
+            echo "=== TOOLCHAIN ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
+            echo "=== ARTIFACTS ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
+            echo "=== DEPENDS ==="; ls -la depends 2>/dev/null | head -30
+            echo "=== BUILD LOG TAIL ==="; tail -n 250 "$RUNNER_TEMP/build.log" 2>/dev/null
           } > "$D" 2>&1
+          tail -c 40000 "$D" > "$RUNNER_TEMP/notes.md"
           gh release delete diag-latest --cleanup-tag -y >/dev/null 2>&1
-          gh release create diag-latest "$D" --title "diag run ${{ github.run_number }}" --notes "auto diagnostics" >/dev/null 2>&1
-          echo "diag uploaded"
+          gh release create diag-latest \
+            --title "diag run ${{ github.run_number }}" \
+            --notes-file "$RUNNER_TEMP/notes.md" >/dev/null 2>&1
+          echo "diag published"
 
       - name: Publish IPA release
         if: success()
