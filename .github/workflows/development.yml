@@ -24,9 +24,18 @@ jobs:
         run: |
           set +e
           brew update >/dev/null 2>&1 || true
-          brew install gmake cmake wget coreutils ldid 2>&1 | tail -8 || true
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
+          for p in gmake cmake wget coreutils; do
+            brew install "$p" 2>&1 | tail -2 || brew upgrade "$p" 2>&1 | tail -2 || echo "brew pkg $p FAILED"
+          done
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          set -e
+          GM="$(brew --prefix)/bin/gmake"
+          command -v gmake >/dev/null 2>&1 && GM="$(command -v gmake)"
+          echo "GMAKE=$GM" >> "$GITHUB_ENV"
+          "$GM" --version | head -1
+          cmake --version | head -1
+          wget --version | head -1
 
       - name: Install JDK 8 (BOOTJDK)
         run: |
@@ -41,9 +50,10 @@ jobs:
                  "$url" -o /tmp/jdk8.tar.gz
             if [ ! -s /tmp/jdk8.tar.gz ]; then echo "=> download failed/empty"; return 1; fi
             ls -l /tmp/jdk8.tar.gz
-            rm -rf /opt/jdk8; mkdir -p /opt/jdk8
-            tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1 || tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 || return 1
-            JC="$(find /opt/jdk8 -type f -name javac -perm -u+x 2>/dev/null | head -1)"
+            JDKHOME="$HOME/jdk8"
+            rm -rf "$JDKHOME"; mkdir -p "$JDKHOME"
+            tar xzf /tmp/jdk8.tar.gz -C "$JDKHOME" --strip-components=1 || tar xzf /tmp/jdk8.tar.gz -C "$JDKHOME" || return 1
+            JC="$(find "$JDKHOME" -type f -name javac -perm -u+x 2>/dev/null | head -1)"
             echo "=> found javac: ${JC:-NONE}"
             if [ -n "$JC" ] && "$JC" -version 2>&1 | grep -q '1\.8'; then
               echo "BOOTJDK=$(dirname "$JC")" >> "$GITHUB_ENV"
@@ -77,7 +87,7 @@ jobs:
       - name: Verify toolchain
         run: |
           set +e
-          BOOTJDK="${BOOTJDK:-/opt/jdk8/bin}"
+          BOOTJDK="${BOOTJDK:-$HOME/jdk8/bin}"
           {
             echo "=== date ==="; date
             echo "=== os ==="; sw_vers
@@ -95,13 +105,15 @@ jobs:
         run: |
           set -o pipefail
           export PATH="/opt/homebrew/bin:/usr/local/bin:${BREW_PREFIX:-/opt/homebrew}/bin:$PATH"
-          export BOOTJDK="${BOOTJDK:-/opt/jdk8/bin}"
+          export BOOTJDK="${BOOTJDK:-$HOME/jdk8/bin}"
           export SDKPATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           export RUNNER=0
           export PLATFORM=2
           export SLIMMED=0
-          echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH"
-          gmake -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
+          mkdir -p depends artifacts
+          GS="${GMAKE:-$(command -v gmake)}"
+          echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH  GMAKE=$GS"
+          "$GS" -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
 
       - name: Publish diagnostics (public release notes)
         if: always()
