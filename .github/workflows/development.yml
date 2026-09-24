@@ -22,16 +22,18 @@ jobs:
 
       - name: Install build tools (brew)
         run: |
-          brew install make cmake wget || true
+          brew install make cmake wget openjdk@8 || true
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
-      - name: Install JDK 8 (BOOTJDK) via Adoptium
+      - name: Set BOOTJDK (JDK 8)
         run: |
-          curl -fsSL "https://api.adoptium.net/v3/binary/latest/8/ga/mac/aarch64/jdk/hotspot/normal/eclipse" -o /tmp/jdk8.tar.gz
-          mkdir -p /opt/jdk8
-          tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1
-          echo "BOOTJDK=/opt/jdk8/bin" >> "$GITHUB_ENV"
-          /opt/jdk8/bin/javac -version
+          PREFIX="$(brew --prefix openjdk@8 2>/dev/null)"
+          if [ -x "$PREFIX/libexec/openjdk.jdk/Contents/Home/bin/javac" ]; then
+            echo "BOOTJDK=$PREFIX/libexec/openjdk.jdk/Contents/Home/bin" >> "$GITHUB_ENV"
+          else
+            echo "::error::openjdk@8 not found at $PREFIX"; exit 1
+          fi
+          "$BOOTJDK"/javac -version
 
       - name: Install ldid (procursus)
         run: |
