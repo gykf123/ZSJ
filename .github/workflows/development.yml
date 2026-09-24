@@ -49,6 +49,7 @@ jobs:
           pull Natives/external/DBNumberedSlider khanhduytran0/DBNumberedSlider 4eddc68b5f92247f8afc0f6114d1b92b338749f4
           pull "$MG/src/main/cpp/3rdparty/glm"    g-truc/glm      2d4c4b4dd31fde06cfffad7915c2b3006402322f
           pull "$MG/src/main/cpp/3rdparty/xxhash" stbrumme/xxhash c2866db364b6ea3a11933e62235ddc166ba18565
+          pull "$MG/src/main/cpp/include/FastSTL"  MobileGL-Dev/FastSTL 644b3b01e6e7dcb6a67818289d2fb9bbe85232f2
 
           echo ">>> perfetto amalgamated SDK"
           PFDIR="$MG/src/main/cpp/3rdparty/perfetto/sdk"
@@ -71,6 +72,7 @@ jobs:
           ls Natives/external/AFNetworking/AFNetworking | head -3
           ls Natives/external/DBNumberedSlider/Classes | head -3
           ls "$MG/src/main/cpp/3rdparty/glm/glm/glm.hpp"
+          ls "$MG/src/main/cpp/include/FastSTL/UnorderedMap.h"
           ls "$PFDIR" | head -10
           } 2>&1 | tee "$RUNNER_TEMP/subm.log"
 
