@@ -20,6 +20,60 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # 原始源码是 zip 导入的, 仓库里只剩 .gitmodules 而没有 gitlink,
+      # 因此 checkout 拉不到子模块, 这里按上游锁定的 commit 精确还原。
+      - name: Restore missing submodules (pinned commits)
+        run: |
+          {
+          set -e
+          pull() {
+            path="$1"; repo="$2"; sha="$3"
+            if [ -d "$path" ] && [ -n "$(ls -A "$path" 2>/dev/null)" ]; then
+              echo "OK present: $path"; return 0
+            fi
+            echo ">>> pull $repo@${sha:0:8} -> $path"
+            rm -rf "$path" /tmp/_sub.zip /tmp/_subx
+            curl -sL --retry 3 --connect-timeout 30 --max-time 1200 \
+                 "https://codeload.github.com/$repo/zip/$sha" -o /tmp/_sub.zip
+            mkdir -p /tmp/_subx
+            unzip -q /tmp/_sub.zip -d /tmp/_subx
+            SRC="$(find /tmp/_subx -mindepth 1 -maxdepth 1 -type d | head -1)"
+            mkdir -p "$(dirname "$path")"
+            mv "$SRC" "$path"
+            echo "    restored $(ls -A "$path" | wc -l) entries"
+          }
+          MG="Natives/external/MobileGlues"
+          pull Natives/external/MobileGlues      MobileGL-Dev/MobileGlues       f0fb4d32794a130f4021342605a751ef2d0f84d8
+          pull Natives/external/fishhook         khanhduytran0/fishhook         ab23646149fd8594545668754a1b7ded56a1b9af
+          pull Natives/external/AFNetworking     AFNetworking/AFNetworking      d9f589cc2c1fe9d55eb5eea00558010afea7a41e
+          pull Natives/external/DBNumberedSlider khanhduytran0/DBNumberedSlider 4eddc68b5f92247f8afc0f6114d1b92b338749f4
+          pull "$MG/src/main/cpp/3rdparty/glm"    g-truc/glm      2d4c4b4dd31fde06cfffad7915c2b3006402322f
+          pull "$MG/src/main/cpp/3rdparty/xxhash" stbrumme/xxhash c2866db364b6ea3a11933e62235ddc166ba18565
+
+          echo ">>> perfetto amalgamated SDK"
+          PFDIR="$MG/src/main/cpp/3rdparty/perfetto/sdk"
+          mkdir -p "$PFDIR"
+          if [ ! -f "$PFDIR/perfetto.cc" ]; then
+            curl -sL --retry 3 --max-time 600 \
+              "https://github.com/google/perfetto/releases/latest/download/perfetto-cpp-sdk-src.zip" -o /tmp/pf.zip
+            unzip -q -o /tmp/pf.zip -d /tmp/pfx
+            cp -R /tmp/pfx/. "$PFDIR"/ 2>/dev/null || true
+            F="$(find "$PFDIR" -name perfetto.cc | head -1)"
+            if [ -n "$F" ] && [ "$(dirname "$F")" != "$PFDIR" ]; then
+              cp -R "$(dirname "$F")"/. "$PFDIR"/ 2>/dev/null || true
+            fi
+          fi
+          set +e
+          echo "--- verify ---"
+          ls -d "$MG/src/main/cpp"
+          ls "$MG/src/main/cpp/CMakeLists.txt" "$MG/src/main/cpp/libraries/ios/libspirv-cross-c-shared.0.dylib"
+          ls Natives/external/fishhook/fishhook.h
+          ls Natives/external/AFNetworking/AFNetworking | head -3
+          ls Natives/external/DBNumberedSlider/Classes | head -3
+          ls "$MG/src/main/cpp/3rdparty/glm/glm/glm.hpp"
+          ls "$PFDIR" | head -10
+          } 2>&1 | tee "$RUNNER_TEMP/subm.log"
+
       - name: Install build tools (brew + GNU make)
         run: |
           {
@@ -146,7 +200,8 @@ jobs:
           set +e
           D="$RUNNER_TEMP/diag_part.txt"
           {
-            echo "=== BREW LOG ==="; cat "$RUNNER_TEMP/brew.log" 2>/dev/null
+            echo "=== SUBMODULES LOG ==="; cat "$RUNNER_TEMP/subm.log" 2>/dev/null
+            echo "=== BREW LOG ==="; tail -n 40 "$RUNNER_TEMP/brew.log" 2>/dev/null
             echo "=== JDK INSTALL LOG ==="; tail -n 30 "$RUNNER_TEMP/jdk.log" 2>/dev/null
             echo "=== TOOLCHAIN ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
             echo "=== ARTIFACTS ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
