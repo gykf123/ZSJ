@@ -22,102 +22,106 @@ jobs:
 
       - name: Install build tools (brew)
         run: |
-          brew install make cmake wget || true
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          set +e
+          brew update >/dev/null 2>&1 || true
+          brew install gmake cmake wget coreutils ldid 2>&1 | tail -8 || true
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
 
-      - name: Install JDK 8 (BOOTJDK)
+      - name: Install JDK 8 (Zulu aarch64 native)
+        run: |
+          set -e
+          for u in \
+            "https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-jdk8.0.504-macosx_aarch64.tar.gz" \
+            "https://cdn.azul.com/zulu/bin/zulu8.94.0.17-ca-jdk8.0.492-macosx_aarch64.tar.gz"; do
+            echo "try: $u"
+            if curl -fsSL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 1800 "$u" -o /tmp/jdk8.tar.gz; then
+              break
+            fi
+          done
+          ls -l /tmp/jdk8.tar.gz
+          rm -rf /opt/jdk8 && mkdir -p /opt/jdk8
+          tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1
+          JDK="/opt/jdk8/bin"
+          echo "BOOTJDK=$JDK" >> "$GITHUB_ENV"
+          export BOOTJDK="$JDK"
+          "$JDK/javac" -version
+
+      - name: Ensure ldid
         run: |
           set +e
-          JAVAC=""
-          if [ -z "$JAVAC" ]; then
-            curl -fsSL "https://corretto.aws/downloads/latest/amazon-corretto-8-x64-macos-jdk.tar.gz" -o /tmp/jdk8.tar.gz \
-              && mkdir -p /opt/jdk8src && tar xzf /tmp/jdk8.tar.gz -C /opt/jdk8src \
-              && JAVAC="$(find /opt/jdk8src -name javac -type f | head -1)"
-          fi
-          if [ -z "$JAVAC" ]; then
-            brew install openjdk@8 >/dev/null 2>&1
-            PREFIX="$(brew --prefix openjdk@8 2>/dev/null)"
-            JAVAC="$(find "$PREFIX" -name javac -type f 2>/dev/null | head -1)"
-          fi
-          if [ -z "$JAVAC" ] || [ ! -x "$JAVAC" ]; then echo "::error::JDK8 not found"; exit 1; fi
-          echo "BOOTJDK=$(dirname "$JAVAC")" >> "$GITHUB_ENV"
-          "$JAVAC" -version
-
-      - name: Install ldid (procursus)
-        run: |
-          curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64" -o /usr/local/bin/ldid \
-            || curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_x86_64" -o /usr/local/bin/ldid
-          chmod +x /usr/local/bin/ldid
-          /usr/local/bin/ldid -h || true
+          if command -v ldid >/dev/null 2>&1; then echo "ldid already present"; command -v ldid; exit 0; fi
+          for a in ldid_macosx_arm64 ldid_macosx_universal ldid_macosx_x86_64; do
+            if curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/$a" -o /tmp/ldidbin; then
+              install -m755 /tmp/ldidbin /usr/local/bin/ldid && echo "installed $a" && break
+            fi
+          done
+          command -v ldid || { echo "::error::ldid could not be installed"; exit 1; }
 
       - name: Verify toolchain
         run: |
-          which gmake cmake wget ldid
-          xcrun --sdk iphoneos --show-sdk-path
-          /opt/jdk8/bin/javac -version
-
-      - name: Get JRE8
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: build.yml
-          path: depends
-          workflow_conclusion: success
-          allow_forks: false
-          repo: PojavLauncherTeam/android-openjdk-build-multiarch
-          branch: buildjre8
-          name: jre8-ios-aarch64
-
-      - name: Get JRE17
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: build.yml
-          path: depends
-          workflow_conclusion: completed
-          allow_forks: false
-          repo: PojavLauncherTeam/android-openjdk-build-multiarch
-          branch: buildjre17-21
-          name: jre17-ios-aarch64
-
-      - name: Get JRE21
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: build.yml
-          path: depends
-          workflow_conclusion: completed
-          allow_forks: false
-          repo: PojavLauncherTeam/android-openjdk-build-multiarch
-          branch: buildjre17-21
-          name: jre21-ios-aarch64
+          set +e
+          BOOTJDK="${BOOTJDK:-/opt/jdk8/bin}"
+          {
+            echo "=== date ==="; date
+            echo "=== os ==="; sw_vers
+            echo "=== tools ==="
+            for t in gmake make cmake wget ldid xcrun zip; do
+              printf "%-8s -> %s\n" "$t" "$(command -v "$t" 2>/dev/null || echo MISSING)"
+            done
+            echo "=== javac ==="; "$BOOTJDK/javac" -version 2>&1
+            echo "=== sdk ==="; xcrun --sdk iphoneos --show-sdk-path 2>&1
+            echo "=== xcode ==="; xcodebuild -version 2>&1
+            echo "=== depends ==="; ls -la depends 2>&1 | head -20
+          } 2>&1 | tee "$RUNNER_TEMP/toolchain.log"
 
       - name: Build for iOS
         run: |
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-          export RUNNER=1 SLIMMED=1
-          export BOOTJDK="${{ env.BOOTJDK }}"
-          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2
-          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 TROLLSTORE_JIT_ENT=1
+          set -o pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:${BREW_PREFIX:-/opt/homebrew}/bin:$PATH"
+          export BOOTJDK="${BOOTJDK:-/opt/jdk8/bin}"
+          export SDKPATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          export RUNNER=0
+          export PLATFORM=2
+          export SLIMMED=0
+          echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH"
+          gmake -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
 
-      - name: Publish release
+      - name: Upload diagnostics (public release)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          D="$RUNNER_TEMP/diag.txt"
+          {
+            echo "=== toolchain ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
+            echo "=== artifacts tree ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
+            echo "=== depends tree ==="; ls -la depends 2>/dev/null | head -30
+            echo "=== build log tail 300 ==="; tail -n 300 "$RUNNER_TEMP/build.log" 2>/dev/null
+          } > "$D" 2>&1
+          gh release delete diag-latest --cleanup-tag -y >/dev/null 2>&1
+          gh release create diag-latest "$D" --title "diag run ${{ github.run_number }}" --notes "auto diagnostics" >/dev/null 2>&1
+          echo "diag uploaded"
+
+      - name: Publish IPA release
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -e
+          ls -la artifacts/
           gh release create "build-${{ github.run_number }}" \
-            --prerelease \
-            --title "CI Build #${{ github.run_number }}" \
-            --notes "Automated build of Angel Aura Amethyst (no-account download patch)." \
-            artifacts/org.angelauramc.amethyst*ios.ipa \
-            artifacts/*trollstore.tipa || true
+            --latest \
+            --title "Amethyst IPA (无账号即可下载版本) #${{ github.run_number }}" \
+            --notes "自动构建：已移除强制正版账号才能下载游戏版本的限制。" \
+            artifacts/*.ipa
 
       - name: Upload artifacts (fallback)
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: amethyst-ios
+          retention-days: 7
           path: |
             artifacts/**/*.ipa
-            artifacts/**/*.tipa
-            artifacts/**/*.dSYM
