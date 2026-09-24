@@ -77,7 +77,14 @@ typedef NS_ENUM(NSUInteger, LauncherProfilesTableSection) {
     ]];
     self.createButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd menu:createMenu];
     if(@available(iOS 19.0, *)) {
-        self.createButtonItem.sharesBackground = NO;
+        // [兼容编译] sharesBackground 是 iOS 19+/26 才有的 UIBarButtonItem 属性，
+        // 旧版 SDK 头文件里没有该声明，直接点语法赋值会编译失败。
+        // 改用 KVC 设置，保持原有运行时行为不变。
+        @try {
+            [self.createButtonItem setValue:@NO forKey:@"sharesBackground"];
+        } @catch (NSException *exception) {
+            NSLog(@"[Compat] sharesBackground not available: %@", exception.reason);
+        }
     }
 
     self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
