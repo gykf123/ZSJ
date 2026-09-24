@@ -1,10 +1,6 @@
 name: Development build
 
 on:
-  pull_request:
-    branches-ignore:
-      - 'l10n_main'
-    types: [opened, reopened]
   push:
     branches-ignore:
       - 'l10n_main'
@@ -12,116 +8,42 @@ on:
 
 jobs:
   build:
-    name: Development build
-    strategy:
-      matrix:
-        include:
-          - platform: 2
-            platform_name: ios
-    
-    runs-on: J316sAP
+    name: Development build (iOS)
+    runs-on: macos-14
     steps:
-      - name: Remove work folders
-        run: |
-          echo "before"
-          ls -lah ./
-          rm -rf ./* || true
-          rm -rf ./.??* || true
-          echo "after"
-          ls -lah ./
-          
       - name: Checkout repository
-        uses: actions/checkout@main
-
-      - name: Checkout repository submodules
-        run: git submodule update --init --recursive
-
-      - name: Get gl4es latest commit hash
-        id: gl4es-sha
-        run: echo "::set-output name=sha::$(echo $(git ls-remote https://github.com/PojavLauncherTeam/gl4es-114-extra refs/heads/master | grep -io '^\S*'))"
-        shell: bash
-
-      - name: Cache gl4es
-        uses: actions/cache@main
-        if: false # use gl4es 1.1.5
-        id: gl4es-cache
+        uses: actions/checkout@v4
         with:
-          path: gl4es/libs
-          key: gl4es-holy-ios-shared-2-${{ steps.gl4es-sha.outputs.sha }}
+          submodules: recursive
+          fetch-depth: 0
 
-      - name: Get gl4es
-        if: false && steps.gl4es-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@main
-        with:
-          repository: 'PojavLauncherTeam/gl4es-114-extra'
-          path: 'gl4es'
-
-      - name: Build gl4es
-        if: false && steps.gl4es-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
+      - name: Install build dependencies
         run: |
-          cd gl4es
-          git config user.email "github-actions@users.noreply.github.com"
-          git config user.name "github-actions"
-          export PATH=/opt/procursus/bin:$PATH
-          wget https://github.com/leetal/ios-cmake/raw/master/ios.toolchain.cmake
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake -DDEFAULT_ES=2 \
-            -DNOX11=ON -DNOEGL=OFF -DSTATICLIB=OFF -DPLATFORM=OS64 \
-            -DCMAKE_C_FLAGS=-Wno-error=implicit-function-declaration
-          cmake --build build --config RelWithDebInfo --target GL
-          cp -R lib/libGL.dylib ../Natives/resources/Frameworks/libgl4es_114.dylib
-          
-      - name: Push gl4es
-        if: false && github.event != 'pull_request' && github.ref_name == 'main' && steps.gl4es-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        run: |
-          git add Natives/resources/Frameworks/libgl4es_114.dylib
-          git commit -am "CI: Update gl4es"
-          git push
-
-      - name: Build for ${{ matrix.platform_name }}
-        run: |
-          export PATH=/opt/homebrew/bin:$PATH
-          export SLIMMED=1
-          if [ "${{ matrix.platform_name }}" == "ios" ]; then
-            # Build ipa and tipa for iOS
-            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
-            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
-          elif [ "${{ matrix.platform_name }}" == "tvos" ]; then
-            # Build tipa only for tvOS
-            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
-          else
-            # Build ipa only for everything else
-            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
+          brew install make cmake openjdk@17 || true
+          # ldid：iOS 自签工具（无需 Apple 开发者证书）。优先用预编译二进制。
+          if ! command -v ldid >/dev/null 2>&1; then
+            curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_x86_64" -o /usr/local/bin/ldid 2>/dev/null \
+            || curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64" -o /usr/local/bin/ldid 2>/dev/null \
+            || true
+            chmod +x /usr/local/bin/ldid 2>/dev/null || true
           fi
+          echo "/usr/local/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
-      - name: Upload regular ipa
-        uses: actions/upload-artifact@main
-        with:
-          name: org.angelauramc.amethyst-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.angelauramc.amethyst-*-${{ matrix.platform_name }}.ipa
+      - name: Build for iOS
+        run: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          export JAVA_HOME="$(brew --prefix openjdk@17 2>/dev/null || /usr/libexec/java_home -v 17 || "")"
+          export SLIMMED=1
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 TROLLSTORE_JIT_ENT=1
 
-      - name: Upload regular tipa
-        uses: actions/upload-artifact@main
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: org.angelauramc.amethyst-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.angelauramc.amethyst-*-${{ matrix.platform_name }}-trollstore.tipa
-
-      - name: Upload slimmed ipa
-        uses: actions/upload-artifact@main
-        with:
-          name: org.angelauramc.amethyst.slimmed-${{ matrix.platform_name }}.ipa
-          path: artifacts/org.angelauramc.amethyst.slimmed-*-${{ matrix.platform_name }}.ipa
-
-      - name: Upload slimmed tipa
-        uses: actions/upload-artifact@main
-        with:
-          name: org.angelauramc.amethyst.slimmed-${{ matrix.platform_name }}-trollstore.tipa
-          path: artifacts/org.angelauramc.amethyst.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
-
-      - name: Upload PojavLauncher.dSYM
-        uses: actions/upload-artifact@main
-        if: matrix.platform_name == 'ios'
-        with:
-          name: AngelAuraAmethyst.dSYM
-          path: artifacts/AngelAuraAmethyst.dSYM
+          name: amethyst-ios
+          path: |
+            artifacts/**/*.ipa
+            artifacts/**/*.tipa
+            artifacts/**/*.dSYM
