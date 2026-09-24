@@ -5,6 +5,7 @@
 
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <mach/mach.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <mach-o/loader.h>

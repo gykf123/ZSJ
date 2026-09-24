@@ -2,6 +2,8 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <libgen.h>
+#include <mach/mach.h>
+#include <mach/exc.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
