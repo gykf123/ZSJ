@@ -20,22 +20,44 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install build tools (brew)
+      - name: Install build tools (brew + GNU make)
         run: |
+          {
           set +e
-          brew update >/dev/null 2>&1 || true
+          brew update >/dev/null 2>&1
           echo "BREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
-          for p in gmake cmake wget coreutils; do
-            brew install "$p" 2>&1 | tail -2 || brew upgrade "$p" 2>&1 | tail -2 || echo "brew pkg $p FAILED"
+          # 注意: Homebrew 的 GNU make 包名是 make, 装出来叫 gmake 且刻意不链接进 bin
+          for p in make cmake wget coreutils; do
+            brew install "$p" 2>&1 | tail -3 || brew upgrade "$p" 2>&1 | tail -3 || echo "brew pkg $p FAILED"
           done
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
-          set -e
-          GM="$(brew --prefix)/bin/gmake"
-          command -v gmake >/dev/null 2>&1 && GM="$(command -v gmake)"
+          GM=""
+          for c in "$(brew --prefix make 2>/dev/null)/bin/gmake" \
+                   "$(brew --prefix)/opt/make/bin/gmake" \
+                   "$(brew --prefix)/bin/gmake" \
+                   "$(command -v gmake 2>/dev/null)"; do
+            if [ -n "$c" ] && [ -x "$c" ]; then GM="$c"; break; fi
+          done
+          if [ -z "$GM" ]; then
+            GM="$(find "$(brew --prefix)" -maxdepth 4 -type f -name gmake -perm -u+x 2>/dev/null | head -1)"
+          fi
+          if [ -z "$GM" ]; then
+            echo "=> GNU make not found via brew, compiling from source"
+            cd /tmp && rm -rf mk && mkdir mk && cd mk
+            wget -q https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz \
+              && tar xzf make-4.4.1.tar.gz && cd make-4.4.1 \
+              && ./configure --prefix="$HOME/gnu" --disable-dependency-tracking >/dev/null 2>&1 \
+              && make -j"$(sysctl -n hw.ncpu)" >/dev/null 2>&1 \
+              && make install >/dev/null 2>&1
+            [ -x "$HOME/gnu/bin/make" ] && GM="$HOME/gnu/bin/make"
+          fi
           echo "GMAKE=$GM" >> "$GITHUB_ENV"
-          "$GM" --version | head -1
+          echo "=> GMAKE=$GM"
+          if [ -n "$GM" ] && [ -x "$GM" ]; then "$GM" --version | head -1; else echo "::error::GNU make unavailable"; fi
+          export PATH="$(brew --prefix)/bin:$PATH"
           cmake --version | head -1
           wget --version | head -1
+          } 2>&1 | tee "$RUNNER_TEMP/brew.log"
 
       - name: Install JDK 8 (BOOTJDK)
         run: |
@@ -56,7 +78,8 @@ jobs:
             JC="$(find "$JDKHOME" -type f -name javac -perm -u+x 2>/dev/null | head -1)"
             echo "=> found javac: ${JC:-NONE}"
             if [ -n "$JC" ] && "$JC" -version 2>&1 | grep -q '1\.8'; then
-              echo "BOOTJDK=$(dirname "$JC")" >> "$GITHUB_ENV"
+              export BOOTJDK="$(dirname "$JC")"
+              echo "BOOTJDK=$BOOTJDK" >> "$GITHUB_ENV"
               echo "=> OK"; "$JC" -version; return 0
             fi
             echo "=> javac missing or not 1.8"; return 1
@@ -123,10 +146,12 @@ jobs:
           set +e
           D="$RUNNER_TEMP/diag_part.txt"
           {
-            echo "=== JDK INSTALL LOG ==="; cat "$RUNNER_TEMP/jdk.log" 2>/dev/null
+            echo "=== BREW LOG ==="; cat "$RUNNER_TEMP/brew.log" 2>/dev/null
+            echo "=== JDK INSTALL LOG ==="; tail -n 30 "$RUNNER_TEMP/jdk.log" 2>/dev/null
             echo "=== TOOLCHAIN ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
             echo "=== ARTIFACTS ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
             echo "=== DEPENDS ==="; ls -la depends 2>/dev/null | head -30
+            echo "=== BUILD LOG HEAD ==="; head -n 120 "$RUNNER_TEMP/build.log" 2>/dev/null
             echo "=== BUILD LOG TAIL ==="; tail -n 250 "$RUNNER_TEMP/build.log" 2>/dev/null
           } > "$D" 2>&1
           tail -c 40000 "$D" > "$RUNNER_TEMP/notes.md"
