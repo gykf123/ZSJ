@@ -446,7 +446,15 @@ static void *ProgressObserverContext = &ProgressObserverContext;
             NSData *scriptData = [NSData dataWithContentsOfFile:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"UniversalJIT26.js"]];
             scriptDataString = [@"&script-data=" stringByAppendingString:[scriptData base64EncodedStringWithOptions:0]];
         }
-        [UIApplication.sharedApplication openURL:[NSURL URLWithString:[NSString stringWithFormat:@"stikjit://enable-jit?bundle-id=%@&pid=%d%@", NSBundle.mainBundle.bundleIdentifier, getpid(), scriptDataString]] options:@{} completionHandler:nil];
+        NSURL *stikjitURL = [NSURL URLWithString:[NSString stringWithFormat:@"stikjit://enable-jit?bundle-id=%@&pid=%d%@", NSBundle.mainBundle.bundleIdentifier, getpid(), scriptDataString]];
+        if ([[UIApplication sharedApplication] canOpenURL:stikjitURL]) {
+            [UIApplication.sharedApplication openURL:stikjitURL options:@{} completionHandler:nil];
+        } else {
+            // StikDebug not installed; keep waiting and let the user enable JIT
+            // from an external tool (NBtool, SideStore, Jitterbug, etc.). The loop
+            // below polls csops and resumes automatically once JIT is on.
+            NSLog(@"[JIT] stikjit:// scheme unavailable, waiting for external JIT enabler");
+        }
     } else {
         // Assuming 16.7-17.3.1. SideStore still lacks this URL scheme at the time of writing, so it only jumps to SideStore.
         [UIApplication.sharedApplication openURL:[NSURL URLWithString:[NSString stringWithFormat:@"sidestore://sidejit-enable?pid=%d", getpid()]] options:@{} completionHandler:nil];
@@ -457,12 +465,13 @@ static void *ProgressObserverContext = &ProgressObserverContext;
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:localize(@"launcher.wait_jit.title", nil)
         message:hasTrollStoreJIT ? localize(@"launcher.wait_jit_trollstore.message", nil) : localize(@"launcher.wait_jit.message", nil)
         preferredStyle:UIAlertControllerStyleAlert];
-/* TODO:
-    UIAlertAction *cancel = [UIAlertAction actionWithTitle:localize(@"Cancel", nil) style:UIAlertActionStyleCancel handler:^{
-        
-    }];
-    [alert addAction:cancel];
-*/
+    UIAlertAction *skipWaitAction = [UIAlertAction actionWithTitle:localize(@"launcher.wait_jit.skip", nil)
+        style:UIAlertActionStyleDestructive
+        handler:^(UIAlertAction *action) {
+            NSLog(@"[JIT] User skipped waiting for JIT. Java might not work.");
+            handler();
+        }];
+    [alert addAction:skipWaitAction];
     [self presentViewController:alert animated:YES completion:nil];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{

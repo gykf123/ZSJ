@@ -67,7 +67,8 @@
 "launcher.menu.install_jar" = "安装 .jar";
 
 "launcher.wait_jit.title" = "请等待应用获取到JIT(Just-in-time)";
-"launcher.wait_jit.message" = "Amethyst启动器必须要JIT (Just-in-time) 权限才能启动游戏";
+"launcher.wait_jit.message" = "Amethyst启动器必须要JIT (Just-in-time) 权限才能启动游戏。\n\n保持本窗口打开，然后打开\"NB全能助手\"→ 应用&证书 → JIT，选择Amethyst并启用JIT（若列表为空，请确认Amethyst是用NB助手签名的、开发者模式已开启）。启用成功后本窗口会自动关闭。\n\n也可以使用 StikDebug / SideStore 等工具启用JIT。";
+"launcher.wait_jit.skip" = "跳过等待（已在外部启用JIT？）";
 
 "login.error.username.outOfRange" = "用户名必须在 3-16 个字符以内";
 
