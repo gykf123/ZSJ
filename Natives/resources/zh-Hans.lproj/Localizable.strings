@@ -69,6 +69,17 @@
 "launcher.wait_jit.title" = "请等待应用获取到JIT(Just-in-time)";
 "launcher.wait_jit.message" = "Amethyst启动器必须要JIT (Just-in-time) 权限才能启动游戏。\n\n保持本窗口打开，然后打开\"NB全能助手\"→ 应用&证书 → JIT，选择Amethyst并启用JIT（若列表为空，请确认Amethyst是用NB助手签名的、开发者模式已开启）。启用成功后本窗口会自动关闭。\n\n也可以使用 StikDebug / SideStore 等工具启用JIT。";
 "launcher.wait_jit.skip" = "跳过等待（已在外部启用JIT？）";
+"launcher.repair.failed.title" = "依赖库补全失败";
+"launcher.repair.failed.message" = "部分必需的游戏库文件下载失败（可能是网络问题）。请点「重试」再次补全；若多次失败，可点「取消」返回，稍后重新安装该版本。";
+"launcher.repair.retry" = "重试";
+"launcher.resource.center" = "资源中心";
+"launcher.resource.mod" = "Mod";
+"launcher.resource.resourcepack" = "资源包";
+"launcher.resource.shader" = "光影";
+"launcher.resource.modpack" = "整合包";
+"launcher.resource.no_url" = "该版本没有可用的下载链接";
+"launcher.resource.done.title" = "安装完成";
+"launcher.resource.done.message" = "已下载到 %@ 目录：\n%@\n\n（资源包 / 光影需在游戏内启用）";
 
 "login.error.username.outOfRange" = "用户名必须在 3-16 个字符以内";
 

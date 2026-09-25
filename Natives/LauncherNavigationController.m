@@ -24,11 +24,15 @@
 #define AUTORESIZE_MASKS UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin
 
 static void *ProgressObserverContext = &ProgressObserverContext;
+static void *RepairProgressContext = &RepairProgressContext;
 
 @interface LauncherNavigationController () <UIDocumentPickerDelegate, UIPickerViewDataSource, PLPickerViewDelegate, UIPopoverPresentationControllerDelegate> {
 }
 
 @property(nonatomic) MinecraftResourceDownloadTask* task;
+@property(nonatomic) MinecraftResourceDownloadTask* repairTask;
+@property(nonatomic) BOOL repairFailed;
+@property(nonatomic, copy) void(^repairCompletion)(BOOL);
 @property(nonatomic) UINavigationController* progressVC;
 @property(nonatomic) NSArray* globalToolbarItems;
 @property(nonatomic) PLPickerView* versionPickerView;
@@ -353,6 +357,29 @@ static void *ProgressObserverContext = &ProgressObserverContext;
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context == RepairProgressContext) {
+        NSProgress *progress = self.repairTask.progress;
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        NSInteger completedUnitCount = self.repairTask.progress.totalUnitCount * self.repairTask.progress.fractionCompleted;
+        self.repairTask.textProgress.completedUnitCount = completedUnitCount;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.progressText.text = self.repairTask.textProgress.localizedAdditionalDescription;
+            if (!progress.finished) return;
+            [self.progressVC dismissModalViewControllerAnimated:NO];
+            self.progressViewMain.observedProgress = nil;
+            @try {
+                [self.repairTask.progress removeObserver:self forKeyPath:@"fractionCompleted" context:RepairProgressContext];
+            } @catch (NSException *e) {}
+            if (self.repairFailed) return; // 下载错误已在 handleError 中弹窗处理
+            self.repairTask = nil;
+            void(^comp)(BOOL) = self.repairCompletion;
+            self.repairCompletion = nil;
+            [self setInteractionEnabled:YES forDownloading:YES];
+            if (comp) comp(YES);
+        });
+        return;
+    }
     if (context != ProgressObserverContext) {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
         return;
@@ -385,14 +412,22 @@ static void *ProgressObserverContext = &ProgressObserverContext;
         self.progressViewMain.observedProgress = nil;
         if (self.task.metadata) {
             __block NSDictionary *metadata = self.task.metadata;
-            [self invokeAfterJITEnabled:^{
-                UIKit_launchMinecraftSurfaceVC(self.view.window, metadata);
+            [self runDependencyRepairWithMetadata:metadata completion:^(BOOL ok){
+                self.task = nil;
+                if (!ok) {
+                    [self setInteractionEnabled:YES forDownloading:YES];
+                    return;
+                }
+                [self invokeAfterJITEnabled:^{
+                    UIKit_launchMinecraftSurfaceVC(self.view.window, metadata);
+                }];
+                [self setInteractionEnabled:YES forDownloading:YES];
             }];
         } else {
             [self reloadProfileList];
+            self.task = nil;
+            [self setInteractionEnabled:YES forDownloading:YES];
         }
-        self.task = nil;
-        [self setInteractionEnabled:YES forDownloading:YES];
     });
 }
 
@@ -483,6 +518,61 @@ static void *ProgressObserverContext = &ProgressObserverContext;
             [alert dismissViewControllerAnimated:YES completion:handler];
         });
     });
+}
+
+#pragma mark - Dependency repair (auto-complete missing libraries)
+
+// 在真正启动 JVM 之前，扫描当前版本声明的 libraries，对未落盘的重新下载。
+// 已存在的文件会被 checkSHA 自动跳过，仅补缺失项。失败时弹「重试 / 取消」。
+- (void)runDependencyRepairWithMetadata:(NSDictionary*)metadata completion:(void(^)(BOOL))completion {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __weak typeof(self) weakSelf = self;
+        MinecraftResourceDownloadTask *repair = [MinecraftResourceDownloadTask new];
+        repair.handleError = ^{
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf setInteractionEnabled:YES forDownloading:YES];
+                weakSelf.repairTask = nil;
+                weakSelf.repairFailed = YES;
+                [weakSelf showRepairFailureDialogWithRetry:^{
+                    weakSelf.repairFailed = NO;
+                    [weakSelf runDependencyRepairWithMetadata:metadata completion:completion];
+                } cancel:^{
+                    if (completion) completion(NO);
+                }];
+            });
+        };
+        [repair prepareForDownload];
+        repair.metadata = metadata;
+        NSArray *tasks = [repair downloadClientLibraries];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (tasks.count == 0) {
+                // 全部齐备，无需修复
+                if (completion) completion(YES);
+                return;
+            }
+            weakSelf.repairTask = repair;
+            weakSelf.repairCompletion = completion;
+            weakSelf.progressViewMain.observedProgress = repair.progress;
+            [repair.progress addObserver:weakSelf
+                forKeyPath:@"fractionCompleted"
+                options:NSKeyValueObservingOptionInitial
+                context:RepairProgressContext];
+            [tasks makeObjectsPerformSelector:@selector(resume)];
+        });
+    });
+}
+
+- (void)showRepairFailureDialogWithRetry:(void(^)(void))retry cancel:(void(^)(void))cancel {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:localize(@"launcher.repair.failed.title", nil)
+        message:localize(@"launcher.repair.failed.message", nil)
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:localize(@"launcher.repair.retry", nil)
+        style:UIAlertActionStyleDefault
+        handler:^(UIAlertAction *action) { if (retry) retry(); }]];
+    [alert addAction:[UIAlertAction actionWithTitle:localize(@"Cancel", nil)
+        style:UIAlertActionStyleCancel
+        handler:^(UIAlertAction *action) { if (cancel) cancel(); }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 #pragma mark - UIPopoverPresentationControllerDelegate

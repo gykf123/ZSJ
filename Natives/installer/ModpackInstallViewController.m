@@ -1,6 +1,7 @@
 #import "AFNetworking.h"
 #import "LauncherNavigationController.h"
 #import "ModpackInstallViewController.h"
+#import "MinecraftResourceDownloadTask.h"
 #import "UIKit+AFNetworking.h"
 #import "UIKit+hook.h"
 #import "WFWorkflowProgressView.h"
@@ -9,6 +10,7 @@
 #import "ios_uikit_bridge.h"
 #import "utils.h"
 #include <dlfcn.h>
+#include <stdlib.h>
 
 #define kCurseForgeGameIDMinecraft 432
 #define kCurseForgeClassIDModpack 4471
@@ -20,6 +22,7 @@
 @property(nonatomic) NSMutableArray *list;
 @property(nonatomic) NSMutableDictionary *filters;
 @property ModrinthAPI *modrinth;
+@property(nonatomic) NSString *projectType;
 @end
 
 @implementation ModpackInstallViewController
@@ -33,11 +36,33 @@
     self.searchController.obscuresBackgroundDuringPresentation = NO;
     self.navigationItem.searchController = self.searchController;
     self.modrinth = [ModrinthAPI new];
+    self.projectType = @"mod";
     self.filters = @{
-        @"isModpack": @(YES),
+        @"projectType": @"mod",
         @"name": @" "
         // mcVersion
     }.mutableCopy;
+
+    // 分类切换：Mod / 资源包 / 光影 / 整合包
+    UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[
+        localize(@"launcher.resource.mod", nil),
+        localize(@"launcher.resource.resourcepack", nil),
+        localize(@"launcher.resource.shader", nil),
+        localize(@"launcher.resource.modpack", nil)
+    ]];
+    seg.selectedSegmentIndex = 0;
+    seg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [seg addTarget:self action:@selector(categoryChanged:) forControlEvents:UIControlEventValueChanged];
+    self.navigationItem.titleView = seg;
+
+    [self updateSearchResults];
+}
+
+- (void)categoryChanged:(UISegmentedControl *)sender {
+    NSArray *types = @[@"mod", @"resourcepack", @"shader", @"modpack"];
+    self.projectType = types[sender.selectedSegmentIndex];
+    [self.filters removeObjectForKey:@"isModpack"];
+    self.filters[@"projectType"] = self.projectType;
     [self updateSearchResults];
 }
 
@@ -157,7 +182,11 @@
             [self actionClose];
             NSString *tmpIconPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"icon.png"];
                 [UIImagePNGRepresentation([cell.imageView.image _imageWithSize:CGSizeMake(40, 40)]) writeToFile:tmpIconPath atomically:YES];
-            [self.modrinth installModpackFromDetail:self.list[indexPath.row] atIndex:i];
+            if ([self.projectType isEqualToString:@"modpack"]) {
+                [self.modrinth installModpackFromDetail:self.list[indexPath.row] atIndex:i];
+            } else {
+                [self installResourceFromDetail:self.list[indexPath.row] atIndex:i projectType:self.projectType];
+            }
         }]];
     }];
 
@@ -186,6 +215,45 @@ dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             }
         });
     });
+}
+
+- (void)installResourceFromDetail:(NSDictionary *)detail atIndex:(NSUInteger)index projectType:(NSString *)projectType {
+    NSString *url = detail[@"versionUrls"][index];
+    if (!url) {
+        showDialog(localize(@"Error", nil), localize(@"launcher.resource.no_url", nil));
+        return;
+    }
+    NSUInteger size = [detail[@"versionSizes"][index] unsignedLongLongValue];
+    id shaObj = detail[@"versionHashes"][index];
+    NSString *sha = [shaObj isKindOfClass:NSString.class] ? shaObj : nil;
+    NSString *subdir = [projectType isEqualToString:@"resourcepack"] ? @"resourcepacks"
+                        : ([projectType isEqualToString:@"shader"] ? @"shaderpacks" : @"mods");
+    NSString *baseDir = @(getenv("POJAV_GAME_DIR"));
+    if (baseDir.length == 0) baseDir = NSHomeDirectory();
+    NSString *destDir = [baseDir stringByAppendingPathComponent:subdir];
+    NSString *filename = [url lastPathComponent];
+    NSString *destPath = [destDir stringByAppendingPathComponent:filename];
+    [NSFileManager.defaultManager createDirectoryAtPath:destDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    MinecraftResourceDownloadTask *task = [MinecraftResourceDownloadTask new];
+    task.handleError = ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self switchToReadyState];
+        });
+    };
+    [task prepareForDownload];
+    NSURLSessionDownloadTask *dl = [task createDownloadTask:url size:size sha:sha altName:detail[@"title"] toPath:destPath success:^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self switchToReadyState];
+            showDialog(localize(@"launcher.resource.done.title", nil),
+                [NSString stringWithFormat:localize(@"launcher.resource.done.message", nil), subdir, destPath]);
+        });
+    }];
+    if (dl) {
+        [dl resume];
+    } else {
+        [self switchToReadyState];
+    }
 }
 
 @end

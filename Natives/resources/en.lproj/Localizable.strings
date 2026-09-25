@@ -80,6 +80,17 @@
 "launcher.wait_jit.title" = "Waiting for JIT";
 "launcher.wait_jit.message" = "Amethyst relies on Just-in-time compilation for Java to work at maximum performance.\n\nKeep this window open, then open your JIT enabler app (NBtool: Apps & Certificates → JIT, or StikDebug / SideStore) and enable JIT for Amethyst. This dialog closes automatically once JIT is on.";
 "launcher.wait_jit.skip" = "Skip waiting (JIT already enabled?)";
+"launcher.repair.failed.title" = "Dependency repair failed";
+"launcher.repair.failed.message" = "Some required game libraries failed to download (possibly a network issue). Tap Retry to repair again; if it keeps failing, tap Cancel to go back and reinstall the version later.";
+"launcher.repair.retry" = "Retry";
+"launcher.resource.center" = "Resource Center";
+"launcher.resource.mod" = "Mod";
+"launcher.resource.resourcepack" = "Resource Pack";
+"launcher.resource.shader" = "Shader";
+"launcher.resource.modpack" = "Modpack";
+"launcher.resource.no_url" = "No download URL available for this version";
+"launcher.resource.done.title" = "Installed";
+"launcher.resource.done.message" = "Downloaded to %@ folder:\n%@\n\n(Enable resource packs / shaders in-game)";
 "launcher.wait_jit_trollstore.message" = "If you still see this message, please enable URL Scheme in TrollStore.";
 
 "login.error.username.outOfRange" = "Username must be at least 3 characters and a maximum of 16 characters";

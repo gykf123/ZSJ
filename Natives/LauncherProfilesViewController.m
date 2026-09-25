@@ -73,6 +73,11 @@ typedef NS_ENUM(NSUInteger, LauncherProfilesTableSection) {
             actionWithTitle:@"Modpack" image:nil
             identifier:@"modpack" handler:^(UIAction *action) {
                 [self actionCreateModpackProfile];
+            }],
+        [UIAction
+            actionWithTitle:localize(@"launcher.resource.center", nil) image:nil
+            identifier:@"resource_center" handler:^(UIAction *action) {
+                [self actionOpenResourceCenter];
             }]
     ]];
     self.createButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd menu:createMenu];
@@ -121,6 +126,11 @@ typedef NS_ENUM(NSUInteger, LauncherProfilesTableSection) {
 }
 
 - (void)actionCreateModpackProfile {
+    ModpackInstallViewController *vc = [ModpackInstallViewController new];
+    [self presentNavigatedViewController:vc];
+}
+
+- (void)actionOpenResourceCenter {
     ModpackInstallViewController *vc = [ModpackInstallViewController new];
     [self presentNavigatedViewController:vc];
 }

@@ -13,7 +13,11 @@
 
     NSMutableString *facetString = [NSMutableString new];
     [facetString appendString:@"["];
-    [facetString appendFormat:@"[\"project_type:%@\"]", searchFilters[@"isModpack"].boolValue ? @"modpack" : @"mod"];
+    NSString *projectType = searchFilters[@"projectType"];
+    if (!projectType) {
+        projectType = searchFilters[@"isModpack"].boolValue ? @"modpack" : @"mod";
+    }
+    [facetString appendFormat:@"[\"project_type:%@\"]", projectType];
     if (searchFilters[@"mcVersion"].length > 0) {
         [facetString appendFormat:@",[\"versions:%@\"]", searchFilters[@"mcVersion"]];
     }
@@ -60,6 +64,9 @@
     [response enumerateObjectsUsingBlock:
   ^(NSDictionary *version, NSUInteger i, BOOL *stop) {
         NSDictionary *file = [version[@"files"] firstObject];
+        for (NSDictionary *f in version[@"files"]) {
+            if ([f[@"primary"] boolValue]) { file = f; break; }
+        }
         mcNames[i] = [version[@"game_versions"] firstObject];
         sizes[i] = file[@"size"];
         urls[i] = file[@"url"];
