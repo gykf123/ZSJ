@@ -8,7 +8,10 @@
 @property NSMutableDictionary* metadata;
 @property(nonatomic, copy) void(^handleError)(void);
 
+- (void)prepareForDownload;
+- (NSArray *)downloadClientLibraries;
 - (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path;
+- (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path success:(void (^)())success;
 - (void)finishDownloadWithErrorString:(NSString *)error;
 
 - (void)downloadVersion:(NSDictionary *)version;
