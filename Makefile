@@ -267,7 +267,8 @@ native: dep_mg
 		-DCMAKE_OSX_SYSROOT="$(SDKPATH)" \
 		-DCMAKE_OSX_ARCHITECTURES=arm64 \
 		-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-		-DCMAKE_C_FLAGS="-arch arm64" \
+		-DCMAKE_C_FLAGS="-arch arm64 -march=armv8-a" \
+		-DCMAKE_CXX_FLAGS="-arch arm64 -march=armv8-a" \
 		-DCONFIG_BRANCH="$(BRANCH)" \
 		-DCONFIG_COMMIT="$(COMMIT)" \
 		-DCONFIG_RELEASE=$(RELEASE) \
@@ -313,7 +314,8 @@ dep_mg:
 		-DCMAKE_OSX_SYSROOT="$(SDKPATH)" \
 		-DCMAKE_OSX_ARCHITECTURES=arm64 \
 		-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-		-DCMAKE_C_FLAGS="-arch arm64" \
+		-DCMAKE_C_FLAGS="-arch arm64 -march=armv8-a" \
+		-DCMAKE_CXX_FLAGS="-arch arm64 -march=armv8-a" \
 		$(SOURCEDIR)/Natives/external/MobileGlues/src/main/cpp/
 
 	cmake --build $(WORKINGDIR)/mobileglues --config RelWithDebInfo -j$(JOBS) --target mobileglues
