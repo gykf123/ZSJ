@@ -189,29 +189,12 @@ jobs:
           export RUNNER=0
           export PLATFORM=2
           export SLIMMED=0
-          # 强制 ARMv8.0 基线（-march=armv8-a），覆盖任何 CMakeLists / 子模块可能设置的更高架构，
-          # 避免 iPad 6 (A10, ARMv8.0) 因 armv8.1+ 指令（LSE / dotprod 等）触发 SIGILL
-          # （表现为 libdeflate_adler32 等 native 崩溃）。包装脚本把 -march=armv8-a 追加到每条
-          # clang/clang++ 命令末尾，确保最后生效。
-          mkdir -p /tmp/ccwrap
-          cat > /tmp/ccwrap/clang <<'WRAP'
-#!/bin/bash
-REAL="$(xcrun -f clang 2>/dev/null || command -v clang)"
-exec "$REAL" "$@" -march=armv8-a
-WRAP
-          cat > /tmp/ccwrap/clang++ <<'WRAP'
-#!/bin/bash
-REAL="$(xcrun -f clang++ 2>/dev/null || command -v clang++)"
-exec "$REAL" "$@" -march=armv8-a
-WRAP
-          chmod +x /tmp/ccwrap/clang /tmp/ccwrap/clang++
-          export PATH="/tmp/ccwrap:$PATH"
-          export CC=/tmp/ccwrap/clang
-          export CXX=/tmp/ccwrap/clang++
           mkdir -p depends artifacts
           GS="${GMAKE:-$(command -v gmake)}"
           echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH  GMAKE=$GS"
-          "$GS" -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
+          # 通过包装脚本强制 ARMv8.0 基线（-march=armv8-a），覆盖任何 CMakeLists / 子模块可能设置的
+          # 更高架构，避免 iPad 6 (A10, ARMv8.0) 因 armv8.1+ 指令（LSE / dotprod 等）触发 SIGILL。
+          bash scripts/force-armv8a-wrapper.sh "$GS" -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 2>&1 | tee "$RUNNER_TEMP/build.log"
 
       - name: Publish diagnostics (public release notes)
         if: always()
