@@ -180,6 +180,34 @@ jobs:
             echo "=== depends ==="; ls -la depends 2>&1 | head -20
           } 2>&1 | tee "$RUNNER_TEMP/toolchain.log"
 
+      - name: 编译 LWJGL 3.4.1 iOS native（含 spvc，支持 MC 26.2+）
+        run: |
+          set -e
+          export PATH="/opt/homebrew/bin:/usr/local/bin:${BREW_PREFIX:-/opt/homebrew}/bin:$PATH"
+          # 1) 安装 ant（官方 ci_build_ios.bash 依赖）
+          if ! command -v ant >/dev/null 2>&1; then brew install ant || true; fi
+          ant -version
+          # 2) 选定 JDK（LWJGL 3.4.1 编译需 JDK 17+；去掉官方脚本的 -Djdk25=true 以免要求 JDK25 编译器）
+          export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home)"
+          echo "JAVA_HOME=$JAVA_HOME"
+          # 3) clone 官方 3.4.1 分支（公开仓库，匿名 clone 可用）
+          rm -rf /tmp/lwjgl3
+          git clone -b wip/rebase_3.4.1 --depth 1 https://github.com/AngelAuraMC/lwjgl3.git /tmp/lwjgl3
+          cd /tmp/lwjgl3
+          sed -i'' 's/-Djdk25=true//g' ci_build_ios.bash
+          # 4) 编译 iOS native（含 spvc/vulkan/glfw/openal/freetype/shaderc）
+          bash ci_build_ios.bash
+          # 5) 替换 ZSJ 的 Frameworks：删旧 3.3.3 liblwjgl*，覆盖 3.4.1 分离 dylib 全集
+          DEST="${GITHUB_WORKSPACE}/Natives/resources/Frameworks"
+          echo "=== 编译产物 bin/out ==="
+          ls -la bin/out/ 2>&1 | head -40
+          rm -f "$DEST"/liblwjgl*.dylib
+          cp bin/out/liblwjgl*.dylib "$DEST"/ 2>/dev/null || true
+          cp bin/out/libfreetype.dylib "$DEST"/ 2>/dev/null || true
+          cp bin/out/libshaderc.dylib "$DEST"/ 2>/dev/null || true
+          echo "=== Frameworks 现有 liblwjgl* ==="
+          ls -la "$DEST"/liblwjgl*.dylib 2>&1
+
       - name: Build for iOS
         run: |
           set -o pipefail
