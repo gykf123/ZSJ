@@ -230,15 +230,41 @@ jobs:
             bash ci_build_ios.bash
             # 5) 替换 ZSJ 的 Frameworks
             DEST="${GITHUB_WORKSPACE}/Natives/resources/Frameworks"
+            # 5.1) 关键修复：官方 ci_build_ios.bash 的 find 仅匹配 'liblwjgl*.dylib'，
+            #      会漏掉 spvc 模块的底层库 libspirv-cross.dylib（其 native-library 名即 spirv-cross，
+            #      见官方 build.xml: <release-module name="spvc" native-library="spirv-cross">）。
+            #      MC 26.x 渲染依赖 spvc(SPIRV-Cross) 转换 shader，缺失即崩溃。故显式补充收集。
+            echo "=== 补充收集 spvc 底层库 libspirv-cross.dylib ==="
+            find /tmp/lwjgl3/bin/libs/native/macos -name 'libspirv-cross.dylib' -exec cp {} bin/out/ \; 2>/dev/null || true
+            if [ ! -f bin/out/libspirv-cross.dylib ]; then
+              echo "::warning::ant 未编译出 iOS 版 spirv-cross，改用 release 下载的 macOS 版并改 iOS 兼容"
+              find /tmp/lwjgl3/bin/RELEASE -name 'libspirv-cross.dylib' -exec cp {} bin/out/ \; 2>/dev/null || true
+            fi
             echo "=== 编译产物 bin/out ==="
             ls -la bin/out/ 2>&1 | head -50
             ls -la bin/out/*.dylib 2>&1 | head -50
+            echo "=== \$LWJGL_NATIVE 下全部 dylib（确认 spvc/vulkan 是否编出及 platform）==="
+            find /tmp/lwjgl3/bin/libs/native/macos -name '*.dylib' | sort | while read f; do
+              echo ">> $(basename "$f")"
+              vtool -show-build "$f" 2>/dev/null | grep -iE 'platform|minos|sdk' || true
+            done
             rm -f "$DEST"/liblwjgl*.dylib
             cp bin/out/liblwjgl*.dylib "$DEST"/ 2>/dev/null || true
             cp bin/out/libfreetype.dylib "$DEST"/ 2>/dev/null || true
             cp bin/out/libshaderc.dylib "$DEST"/ 2>/dev/null || true
-            echo "=== Frameworks 现有 liblwjgl* ==="
-            ls -la "$DEST"/liblwjgl*.dylib 2>&1
+            # 5.2) spvc 核心库（SPIRV-Cross）：复制进 Frameworks，并标记为 iOS 兼容
+            #      LWJGL 的 native 按 macOS SDK 编译（LC_BUILD_VERSION=macos），iOS App 加载需改为 iOS(2)
+            if [ -f bin/out/libspirv-cross.dylib ]; then
+              cp bin/out/libspirv-cross.dylib "$DEST"/ 2>/dev/null || true
+              vtool -arch arm64 -set-build-version 2 14.0 16.0 -replace \
+                -output "$DEST/libspirv-cross.dylib" "$DEST/libspirv-cross.dylib" 2>/dev/null || true
+              echo "=== libspirv-cross.dylib 改 iOS 兼容后 build version ==="
+              vtool -show-build "$DEST/libspirv-cross.dylib" 2>/dev/null | grep -iE 'platform|minos|sdk' || true
+            else
+              echo "::error::未找到 libspirv-cross.dylib，spvc 缺失，MC 26.x 将因缺 spvc 模块崩溃"
+            fi
+            echo "=== Frameworks 现有 liblwjgl* 与 spvc ==="
+            ls -la "$DEST"/liblwjgl*.dylib "$DEST"/libspirv-cross.dylib 2>&1
           }
           build_native 2>&1 | tee "$NL"
           RC=${PIPESTATUS[0]}
