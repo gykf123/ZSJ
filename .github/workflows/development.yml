@@ -53,6 +53,9 @@ jobs:
           pull "$MG/MobileGlues-cpp/3rdparty/glslang" KhronosGroup/glslang f5f664dee8146676b04a332a7233959fc3ce9681
           pull "$MG/MobileGlues-cpp/3rdparty/SPIRV-Cross" KhronosGroup/SPIRV-Cross a0fba56c34a6700f1724bf9b751da5b488a3775c
 
+          echo ">>> apply ZSJ MobileGlues/glslang patches (MC 26.x #version + crash guards)"
+          python3 Natives/patch_zsj_mobileglues.py Natives/external/MobileGlues
+
           echo ">>> perfetto amalgamated SDK"
           PFDIR="$MG/MobileGlues-cpp/3rdparty/perfetto/sdk"
           mkdir -p "$PFDIR"
