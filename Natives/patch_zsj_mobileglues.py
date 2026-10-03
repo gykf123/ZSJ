@@ -73,6 +73,21 @@ SHADER_INJECT = (
     "    }\n"
 )
 
+# Second, belt-and-braces: also trim the *backend-bound* source right before it
+# is handed to GLES.glShaderSource(). This covers the converted path too, so the
+# final shader glslang compiles always starts with '#version' on line 1.
+SHADER_ANCHOR2 = "    if (!essl_src.empty()) {"
+SHADER_INJECT2 = (
+    "    // [ZSJ patch] Guarantee the source passed to the backend begins with\n"
+    "    // '#version'. Trimming here (after direct/converted selection) is the\n"
+    "    // final safety net against a leading newline slipping through.\n"
+    "    {\n"
+    "        size_t _zes = 0;\n"
+    "        while (_zes < essl_src.size() && std::isspace((unsigned char)essl_src[_zes])) _zes++;\n"
+    "        if (_zes > 0) essl_src = essl_src.substr(_zes);\n"
+    "    }\n"
+)
+
 
 def patch_shader(root: pathlib.Path) -> int:
     target = root / SHADER_CPP_REL
@@ -80,16 +95,26 @@ def patch_shader(root: pathlib.Path) -> int:
         print(f"[ZSJ patch] CRITICAL: {target} not found!", file=sys.stderr)
         return 1
     text = target.read_text()
-    if "ZSJ patch" in text:
-        print("[ZSJ patch] shader.cpp already patched, skipping.")
+    # Idempotency keyed on the *second* (backend-bound) marker, so a
+    # first-injection-only tree is correctly re-patched.
+    if "ZSJ patch" in text and "final safety net" in text:
+        print("[ZSJ patch] shader.cpp already fully patched, skipping.")
         return 0
     if SHADER_ANCHOR not in text:
-        print("[ZSJ patch] CRITICAL: shader.cpp anchor not found; "
+        print(f"[ZSJ patch] CRITICAL: shader.cpp anchor not found; "
               "MobileGlues source changed upstream.", file=sys.stderr)
         return 1
-    text = text.replace(SHADER_ANCHOR, SHADER_INJECT + SHADER_ANCHOR, 1)
+    if SHADER_ANCHOR2 not in text:
+        print(f"[ZSJ patch] CRITICAL: shader.cpp second anchor not found; "
+              "MobileGlues source changed upstream.", file=sys.stderr)
+        return 1
+    if "ZSJ patch" not in text:
+        text = text.replace(SHADER_ANCHOR, SHADER_INJECT + SHADER_ANCHOR, 1)
+    if "final safety net" not in text:
+        text = text.replace(SHADER_ANCHOR2, SHADER_INJECT2 + SHADER_ANCHOR2, 1)
     target.write_text(text)
-    print(f"[ZSJ patch] Applied critical shader.cpp leading-whitespace trim.")
+    print(f"[ZSJ patch] Applied critical shader.cpp leading-whitespace trim "
+          f"(entry + backend-bound).")
     return 0
 
 

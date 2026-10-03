@@ -55,6 +55,8 @@ jobs:
 
           echo ">>> apply ZSJ MobileGlues/glslang patches (MC 26.x #version + crash guards)"
           python3 Natives/patch_zsj_mobileglues.py Natives/external/MobileGlues
+          echo ">>> verify ZSJ patch injected into shader.cpp:"
+          grep -c "final safety net" Natives/external/MobileGlues/MobileGlues-cpp/gl/shader.cpp
 
           echo ">>> perfetto amalgamated SDK"
           PFDIR="$MG/MobileGlues-cpp/3rdparty/perfetto/sdk"
@@ -338,3 +340,12 @@ jobs:
           retention-days: 7
           path: |
             artifacts/**/*.ipa
+
+      - name: Upload MobileGlues dylib (verify patch reached the binary)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobileglues-dylib
+          retention-days: 30
+          path: |
+            Natives/build/libmobileglues.dylib
