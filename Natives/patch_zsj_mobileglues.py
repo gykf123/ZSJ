@@ -65,7 +65,7 @@ SHADER_CPP_REL = "MobileGlues-cpp/gl/shader.cpp"
 SHADER_CSTDIO_ANCHOR = "#include <cctype>\n"
 SHADER_CSTDIO_INJECT = (
     "#include <cctype>\n"
-    "#include <cstdio>  // [ZSJ-patch-cstdio] for [ZSJ-DIAG] fprintf\n"
+    "#include <cstdio>  // [ZSJ-patch-cstdio] for ZSJ diagnostic fprintf\n"
 )
 
 # -- 1b. entry trim (before version detection)
@@ -171,7 +171,7 @@ def patch_shader(root: pathlib.Path) -> int:
         changed = True
 
     # 1d. diagnostic + count=1
-    if "ZSJ-DIAG" not in text:
+    if "ZSJ-patch-count1" not in text:
         if SHADER_SRC_ANCHOR not in text:
             print(f"[ZSJ patch] CRITICAL: shader.cpp glShaderSource anchor not found; "
                   "MobileGlues source changed upstream.", file=sys.stderr)
