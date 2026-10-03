@@ -287,6 +287,8 @@ jobs:
           export RUNNER=0
           export PLATFORM=2
           export SLIMMED=0
+          # ZSJ 构建水印：与 release tag (build-<run_number>) 完全一致，供启动日志核对装的是哪个版本
+          export ZSJ_BUILD_TAG="build-${{ github.run_number }}"
           mkdir -p depends artifacts
           GS="${GMAKE:-$(command -v gmake)}"
           echo "BOOTJDK=$BOOTJDK  SDKPATH=$SDKPATH  GMAKE=$GS"

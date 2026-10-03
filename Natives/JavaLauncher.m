@@ -20,6 +20,11 @@
 #import "PLLogOutputView.h"
 #import "PLProfiles.h"
 
+// ZSJ 构建水印：CI 在编译期通过 -DZSJ_BUILD_TAG="build-N" 注入；本地未注入时兜底。
+#ifndef ZSJ_BUILD_TAG
+#define ZSJ_BUILD_TAG "local-dev"
+#endif
+
 #define fm NSFileManager.defaultManager
 
 extern char **environ;
@@ -102,6 +107,11 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
 }
 
 int launchJVM(NSString *username, id launchTarget, int width, int height, int minVersion) {
+    // ZSJ 构建水印：一眼确认手机上到底装的是哪个 build（避免反复猜版本）
+    NSLog(@"[ZSJ] ==========================================");
+    NSLog(@"[ZSJ] ZSJ build watermark = %s", ZSJ_BUILD_TAG);
+    NSLog(@"[ZSJ] renderer fix: MobileGlues double-trim (build-32+)");
+    NSLog(@"[ZSJ] ==========================================");
     NSLog(@"[JavaLauncher] Beginning JVM launch");
 
     init_loadDefaultEnv();

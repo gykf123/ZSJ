@@ -207,6 +207,14 @@ target_link_libraries(AngelAuraAmethyst
   "-framework WebKit"
   "-weak_framework SafariServices"
 )
+
+# ZSJ 构建水印：CI 通过环境变量 ZSJ_BUILD_TAG 注入（如 "build-34"，与 release tag 一致）。
+# 本地未设置该变量时跳过，源码侧用 #ifndef ZSJ_BUILD_TAG 兜底为 "local-dev"。
+if(DEFINED ENV{ZSJ_BUILD_TAG} AND NOT "$ENV{ZSJ_BUILD_TAG}" STREQUAL "")
+  target_compile_definitions(AngelAuraAmethyst PRIVATE "ZSJ_BUILD_TAG=\"$ENV{ZSJ_BUILD_TAG}\"")
+  message(STATUS "ZSJ build watermark enabled: $ENV{ZSJ_BUILD_TAG}")
+endif()
+
 set_target_properties(AngelAuraAmethyst PROPERTIES
   MACOSX_BUNDLE TRUE
   MACOSX_FRAMEWORK_IDENTIFIER org.cmake.ExecutableTarget
