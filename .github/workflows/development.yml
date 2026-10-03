@@ -205,7 +205,19 @@ jobs:
             echo "JAVA_HOME=$JAVA_HOME"
             "$JAVA_HOME/bin/java" -version
             "$JAVA_HOME/bin/javac" -version
-            # 3) clone 官方 3.4.1 分支（公开仓库，匿名 clone 可用）
+            # 3) 设置 JAVA8_HOME（build.xml 的 release 阶段 -check-release-jdk 要求，用于生成 JDK8 兼容 jar）
+            if [ -x "/Users/runner/jdk8/Contents/Home/bin/javac" ]; then
+              export JAVA8_HOME="/Users/runner/jdk8/Contents/Home"
+            elif [ -x "$HOME/jdk8/Contents/Home/bin/javac" ]; then
+              export JAVA8_HOME="$HOME/jdk8/Contents/Home"
+            elif [ -x "$HOME/jdk8/bin/javac" ]; then
+              export JAVA8_HOME="$HOME/jdk8"
+            fi
+            echo "JAVA8_HOME=${JAVA8_HOME:-未设置}"
+            "${JAVA8_HOME}/bin/javac" -version
+            # 防 build.xml 另查 JAVA25_HOME，与 JAVA_HOME 对齐
+            export JAVA25_HOME="$JAVA_HOME"
+            # 4) clone 官方 3.4.1 分支（公开仓库，匿名 clone 可用）
             rm -rf /tmp/lwjgl3
             git clone -b wip/rebase_3.4.1 --depth 1 --single-branch https://github.com/AngelAuraMC/lwjgl3.git /tmp/lwjgl3
             cd /tmp/lwjgl3
