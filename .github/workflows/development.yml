@@ -47,10 +47,14 @@ jobs:
           pull Natives/external/fishhook         khanhduytran0/fishhook         ab23646149fd8594545668754a1b7ded56a1b9af
           pull Natives/external/AFNetworking     AFNetworking/AFNetworking      d9f589cc2c1fe9d55eb5eea00558010afea7a41e
           pull Natives/external/DBNumberedSlider khanhduytran0/DBNumberedSlider 4eddc68b5f92247f8afc0f6114d1b92b338749f4
-          # 2.0.0 已移除 glm；xxhash/FastSTL 已 vendored 于 MobileGlues-cpp 内，无需单独 pull
+          # 2.0.0 已移除 glm；以下为 2.0.0 的嵌套 submodule（pull 脚本不递归拉取，须逐个拉）
+          pull "$MG/MobileGlues-cpp/3rdparty/xxhash" stbrumme/xxhash c2866db364b6ea3a11933e62235ddc166ba18565
+          pull "$MG/MobileGlues-cpp/include/FastSTL"  MobileGL-Dev/FastSTL 644b3b01e6e7dcb6a67818289d2fb9bbe85232f2
+          pull "$MG/MobileGlues-cpp/3rdparty/glslang" KhronosGroup/glslang f5f664dee8146676b04a332a7233959fc3ce9681
+          pull "$MG/MobileGlues-cpp/3rdparty/SPIRV-Cross" KhronosGroup/SPIRV-Cross a0fba56c34a6700f1724bf9b751da5b488a3775c
 
           echo ">>> perfetto amalgamated SDK"
-          PFDIR="$MG/src/main/cpp/3rdparty/perfetto/sdk"
+          PFDIR="$MG/MobileGlues-cpp/3rdparty/perfetto/sdk"
           mkdir -p "$PFDIR"
           if [ ! -f "$PFDIR/perfetto.cc" ]; then
             curl -sL --retry 3 --max-time 600 \
