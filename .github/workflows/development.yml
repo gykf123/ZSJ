@@ -182,31 +182,56 @@ jobs:
 
       - name: 编译 LWJGL 3.4.1 iOS native（含 spvc，支持 MC 26.2+）
         run: |
-          set -e
+          set -exo pipefail
           export PATH="/opt/homebrew/bin:/usr/local/bin:${BREW_PREFIX:-/opt/homebrew}/bin:$PATH"
-          # 1) 安装 ant（官方 ci_build_ios.bash 依赖）
-          if ! command -v ant >/dev/null 2>&1; then brew install ant || true; fi
-          ant -version
-          # 2) 选定 JDK（LWJGL 3.4.1 编译需 JDK 17+；去掉官方脚本的 -Djdk25=true 以免要求 JDK25 编译器）
-          export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home)"
-          echo "JAVA_HOME=$JAVA_HOME"
-          # 3) clone 官方 3.4.1 分支（公开仓库，匿名 clone 可用）
-          rm -rf /tmp/lwjgl3
-          git clone -b wip/rebase_3.4.1 --depth 1 https://github.com/AngelAuraMC/lwjgl3.git /tmp/lwjgl3
-          cd /tmp/lwjgl3
-          sed -i'' 's/-Djdk25=true//g' ci_build_ios.bash
-          # 4) 编译 iOS native（含 spvc/vulkan/glfw/openal/freetype/shaderc）
-          bash ci_build_ios.bash
-          # 5) 替换 ZSJ 的 Frameworks：删旧 3.3.3 liblwjgl*，覆盖 3.4.1 分离 dylib 全集
-          DEST="${GITHUB_WORKSPACE}/Natives/resources/Frameworks"
-          echo "=== 编译产物 bin/out ==="
-          ls -la bin/out/ 2>&1 | head -40
-          rm -f "$DEST"/liblwjgl*.dylib
-          cp bin/out/liblwjgl*.dylib "$DEST"/ 2>/dev/null || true
-          cp bin/out/libfreetype.dylib "$DEST"/ 2>/dev/null || true
-          cp bin/out/libshaderc.dylib "$DEST"/ 2>/dev/null || true
-          echo "=== Frameworks 现有 liblwjgl* ==="
-          ls -la "$DEST"/liblwjgl*.dylib 2>&1
+          NL="$RUNNER_TEMP/native.log"
+          build_native() {
+            echo "=== 工具版本自检 ==="
+            which git ant cmake wget xcrun || true
+            git --version; cmake --version | head -1
+            # 1) 安装 ant（官方 ci_build_ios.bash 依赖 ant 调度编译）
+            if ! command -v ant >/dev/null 2>&1; then
+              brew install ant
+            fi
+            ant -version || { echo "::error::ant 不可用"; return 1; }
+            # 2) 安装 Zulu JDK 25（LWJGL 3.4.1 必须用 JDK 25 工具链编译，官方 ci 即如此；脚本里的 -Djdk25=true 一并保留）
+            export JAVA_HOME="/tmp/zulu25"
+            if [ ! -x "$JAVA_HOME/bin/javac" ]; then
+              rm -rf /tmp/zulu25 /tmp/zulu25.tar.gz
+              wget -q "https://cdn.azul.com/zulu/bin/zulu25.30.17-ca-jdk25.0.1-macosx_aarch64.tar.gz" -O /tmp/zulu25.tar.gz
+              mkdir -p /tmp/zulu25
+              tar xzf /tmp/zulu25.tar.gz -C /tmp/zulu25 --strip-components 1
+            fi
+            echo "JAVA_HOME=$JAVA_HOME"
+            "$JAVA_HOME/bin/java" -version
+            "$JAVA_HOME/bin/javac" -version
+            # 3) clone 官方 3.4.1 分支（公开仓库，匿名 clone 可用）
+            rm -rf /tmp/lwjgl3
+            git clone -b wip/rebase_3.4.1 --depth 1 --single-branch https://github.com/AngelAuraMC/lwjgl3.git /tmp/lwjgl3
+            cd /tmp/lwjgl3
+            echo "=== 仓库根文件 ==="
+            ls -la
+            echo "=== ci_build_ios.bash 关键参数（前 30 行）==="
+            sed -n '1,30p' ci_build_ios.bash
+            # 保留 -Djdk25=true（LWJGL 3.4.1 需 JDK25 工具链，JAVA_HOME 已指向 Zulu JDK25）
+            # 4) 编译 iOS native（含 spvc/vulkan/glfw/openal/freetype/shaderc）
+            bash ci_build_ios.bash
+            # 5) 替换 ZSJ 的 Frameworks
+            DEST="${GITHUB_WORKSPACE}/Natives/resources/Frameworks"
+            echo "=== 编译产物 bin/out ==="
+            ls -la bin/out/ 2>&1 | head -50
+            ls -la bin/out/*.dylib 2>&1 | head -50
+            rm -f "$DEST"/liblwjgl*.dylib
+            cp bin/out/liblwjgl*.dylib "$DEST"/ 2>/dev/null || true
+            cp bin/out/libfreetype.dylib "$DEST"/ 2>/dev/null || true
+            cp bin/out/libshaderc.dylib "$DEST"/ 2>/dev/null || true
+            echo "=== Frameworks 现有 liblwjgl* ==="
+            ls -la "$DEST"/liblwjgl*.dylib 2>&1
+          }
+          build_native 2>&1 | tee "$NL"
+          RC=${PIPESTATUS[0]}
+          echo "native build exit code: $RC"
+          exit $RC
 
       - name: Build for iOS
         run: |
@@ -236,12 +261,13 @@ jobs:
             echo "=== BREW LOG ==="; tail -n 40 "$RUNNER_TEMP/brew.log" 2>/dev/null
             echo "=== JDK INSTALL LOG ==="; tail -n 30 "$RUNNER_TEMP/jdk.log" 2>/dev/null
             echo "=== TOOLCHAIN ==="; cat "$RUNNER_TEMP/toolchain.log" 2>/dev/null
+            echo "=== NATIVE LOG ==="; tail -c 45000 "$RUNNER_TEMP/native.log" 2>/dev/null
             echo "=== ARTIFACTS ==="; find artifacts -maxdepth 2 2>/dev/null | head -40
             echo "=== DEPENDS ==="; ls -la depends 2>/dev/null | head -30
             echo "=== BUILD LOG HEAD ==="; head -n 120 "$RUNNER_TEMP/build.log" 2>/dev/null
             echo "=== BUILD LOG TAIL ==="; tail -n 250 "$RUNNER_TEMP/build.log" 2>/dev/null
           } > "$D" 2>&1
-          tail -c 40000 "$D" > "$RUNNER_TEMP/notes.md"
+          tail -c 60000 "$D" > "$RUNNER_TEMP/notes.md"
           gh release delete diag-latest --cleanup-tag -y >/dev/null 2>&1
           gh release create diag-latest \
             --title "diag run ${{ github.run_number }}" \
