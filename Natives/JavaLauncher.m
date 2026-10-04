@@ -239,7 +239,21 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
     // Setup options.txt
     [MinecraftOptionUtils setupOptionsAtGameDir:gameDir];
-    
+
+    // [ZSJ-patch] Report Vulkan renderer prerequisites at launch.
+    {
+        NSString *mvk = [NSString stringWithFormat:@"%@/Frameworks/libMoltenVK.dylib", NSBundle.mainBundle.bundlePath];
+        BOOL mvkExists = [fm fileExistsAtPath:mvk];
+        const char *glslC = getenv("POJAV_RENDERER");
+        NSString *glsl = glslC ? [NSString stringWithUTF8String:glslC] : @"<unset>";
+        NSLog(@"[ZSJ] === Vulkan renderer probe ===");
+        NSLog(@"[ZSJ] libMoltenVK.dylib present: %@ (%@)", mvkExists ? @"YES" : @"NO", mvk);
+        NSLog(@"[ZSJ] POJAV_RENDERER (OpenGL libname): %@", glsl);
+        NSLog(@"[ZSJ] org.lwjgl.vulkan.libname = libMoltenVK.dylib (set in PojavLauncher)");
+        NSLog(@"[ZSJ] options.txt preferredGraphicsBackend = vulkan");
+        NSLog(@"[ZSJ] =================================");
+    }
+
     int margc = -1;
     const char *margv[1000];
 

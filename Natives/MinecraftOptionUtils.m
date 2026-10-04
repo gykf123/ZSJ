@@ -21,6 +21,13 @@
     [options setDefaultForKey:@"particles" value:@"1"];
     [options setDefaultForKey:@"renderDistance" value:@"2"];
     [options setDefaultForKey:@"simulationDistance" value:@"5"];
+    // [ZSJ-patch] Force Minecraft 26.2 experimental Vulkan renderer backend.
+    // MC 26.2 added "Graphics API" (options.txt key: preferredGraphicsBackend),
+    //        values: default / opengl / vulkan. Vulkan goes through MoltenVK on iOS,
+    //        bypassing the ANGLE Metal GLES 3.0 ceiling (MC 26.2 requires ES 3.1).
+    // We set it as a default so a user's manual in-game choice is never overridden.
+    [options setDefaultForKey:@"preferredGraphicsBackend" value:@"vulkan"];
+    NSLog(@"[ZSJ] options.txt: preferredGraphicsBackend set to 'vulkan' (experimental renderer)");
     [options save];
 }
 

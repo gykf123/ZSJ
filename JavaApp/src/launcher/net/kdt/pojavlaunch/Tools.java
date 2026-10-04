@@ -260,7 +260,13 @@ public final class Tools {
             if (libItem.name.startsWith("com.mojang:text2speech") ||
                 //libItem.name.startsWith("net.java.jinput") ||
                 libItem.name.startsWith("net.java.dev.jna:platform:") ||
-                libItem.name.startsWith("org.lwjgl") ||
+                // [ZSJ-patch] Do NOT skip lwjgl-vulkan: MC 26.2's experimental Vulkan
+                //   renderer (options.txt: preferredGraphicsBackend=vulkan) needs the
+                //   org.lwjgl:lwjgl-vulkan module present in the classpath. The Java
+                //   classes ship inside our bundled lwjgl.jar; the native side is
+                //   libMoltenVK.dylib (org.lwjgl.vulkan.libname in PojavLauncher.java).
+                //   All other org.lwjgl modules remain skipped (replaced by our bundle).
+                (libItem.name.startsWith("org.lwjgl") && !libItem.name.startsWith("org.lwjgl:lwjgl-vulkan")) ||
                 libItem.name.startsWith("tv.twitch")) {
                     libItem._skip = true;
                     continue;
