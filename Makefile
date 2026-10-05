@@ -357,6 +357,10 @@ payload: native dep_mg java jre assets
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
 	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
+	# [ZSJ-patch] Legacy LWJGL 3.3.3 stack jar goes into its OWN dir so it is not
+	#   picked up by the app libs/ classpath wildcard (would clash with 3.4.1).
+	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs_legacy)
+	cp $(SOURCEDIR)/JavaApp/build/libs_legacy/*.jar $(WORKINGDIR)/AngelAuraAmethyst.app/libs_legacy/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo17 || exit 1
 	$(call METHOD_DIRCHECK,$(OUTPUTDIR)/Payload)

@@ -7,9 +7,18 @@ CLASSES := $(SOURCES:$(SOURCEDIR)/%.java=$(OUTPUTDIR)/%.class)
 
 TARGETS := $(shell find $(SOURCEDIR) -mindepth 1 -maxdepth 1 -type d)
 TARGETS := $(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar)
+# [ZSJ-patch] Also build the legacy LWJGL 3.3.3 stack jar (1.21.x runtime),
+#   into build/libs_legacy/ (kept out of the main libs/ classpath wildcard).
+TARGETS += $(OUTPUTDIR)/libs_legacy/lwjgl-legacy.jar
 
 # Add all jars to classpath and allow compiling with private API
-JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/*.jar))" -XDignore.symbol.file
+# [ZSJ-patch] Exclude libs/lwjgl_legacy/*.jar from the COMPILE classpath.
+#   lwjgl_legacy holds the LWJGL 3.3.3 jars for the 1.21.x runtime stack; they
+#   must NOT be mixed with the 3.4.1 jars at compile time (duplicate classes).
+#   They are still packaged into lwjgl-legacy.jar by the dedicated rule below.
+LEGACY_JARS := $(wildcard libs/lwjgl_legacy/*.jar)
+COMPILE_JARS := $(filter-out $(LEGACY_JARS),$(wildcard libs/*/*.jar))
+JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(COMPILE_JARS))" -XDignore.symbol.file
 
 all: $(TARGETS)
 	
@@ -40,11 +49,24 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 
 $(OUTPUTDIR)/lwjgl.jar: $(CLASSES) check_empty_classes
 	@set -e
-	@echo "Creating $@"
+	@echo "Creating $@ (LWJGL 3.4.1 main stack)"
 	@mkdir -p $(OUTPUTDIR)/lwjgl_lib
-	@cd $(OUTPUTDIR)/lwjgl_lib && find ../../libs/lwjgl -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
+	@cd $(OUTPUTDIR)/lwjgl_lib && find ../../libs/lwjgl -maxdepth 1 -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
 	@cp -R $(OUTPUTDIR)/lwjgl/* $(OUTPUTDIR)/lwjgl_lib/
 	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib .
+
+# [ZSJ-patch] Legacy LWJGL 3.3.3 stack for Minecraft <= 1.21.x (see JavaLauncher.m
+#   stack selection). Built into build/libs_legacy/ so it does NOT share the app
+#   libs/ classpath wildcard with lwjgl.jar (3.4.1) -- both would otherwise be
+#   loaded together and clash. JavaLauncher.m appends libs_legacy/* to -cp only
+#   when the legacy stack is selected.
+$(OUTPUTDIR)/libs_legacy/lwjgl-legacy.jar: $(CLASSES) check_empty_classes
+	@set -e
+	@echo "Creating $@ (LWJGL 3.3.3 legacy stack)"
+	@mkdir -p $(OUTPUTDIR)/lwjgl_legacy_lib
+	@cd $(OUTPUTDIR)/lwjgl_legacy_lib && find ../../libs/lwjgl_legacy -maxdepth 1 -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
+	@mkdir -p $(dir $@)
+	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_legacy_lib .
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e

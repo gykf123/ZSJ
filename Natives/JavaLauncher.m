@@ -198,6 +198,38 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSLog(@"[JavaLauncher] Looking for Java %d or later", minVersion);
     NSString *javaHome = getSelectedJavaHome(defaultJRETag, minVersion);
 
+    // [ZSJ-patch] === LWJGL dual-stack selection ===
+    // The ZSJ renderer bundle is single-version: LWJGL 3.4.1 (needed by MC 26.x,
+    // which uses the spvc/Vulkan pipeline) OR LWJGL 3.3.3 (the pre-26 adaptation
+    // build that ran MC 1.21.x fine). Because 3.4.1 introduced a regression for
+    // 1.21.x (transform-feedback / clouds shader failures), we ship BOTH stacks
+    // and pick one by the instance's Minecraft version:
+    //   - MC >= 26.1  -> main   stack: bundled lwjgl.jar        + Frameworks/
+    //   - MC <= 1.21.x-> legacy stack: lwjgl-legacy.jar (3.3.3) + Frameworks-legacy/
+    // Fail-safe: anything we cannot clearly classify as "<= 1.21.x" uses the
+    // MAIN stack, so MC 26.x can never accidentally be downgraded.
+    BOOL useLegacyLWJGL = NO;
+    NSString *mcVersionForStack = nil;
+    if (!launchJar) {
+        mcVersionForStack = [PLProfiles resolveKeyForCurrentProfile:@"lastVersionId"];
+        if (mcVersionForStack.length > 0) {
+            // Determine the major.minor of the version id. Two schemes exist:
+            //   old scheme: "1.21.11" -> major 1, minor 21
+            //   new scheme: "26.1"/"26.2" -> calendar year, definitely new stack
+            NSArray<NSString *> *parts = [mcVersionForStack componentsSeparatedByString:@"."];
+            int p0 = parts.count > 0 ? parts[0].intValue : -1;
+            int p1 = parts.count > 1 ? parts[1].intValue : -1;
+            // legacy only when this is clearly an old-scheme 1.x.y with x <= 21
+            if (p0 == 1 && p1 >= 0 && p1 <= 21) {
+                useLegacyLWJGL = YES;
+            }
+        }
+    }
+    NSString *frameworksDirName = useLegacyLWJGL ? @"Frameworks-legacy" : @"Frameworks";
+    NSString *stackName = useLegacyLWJGL ? @"3.3.3 (legacy)" : @"3.4.1 (main)";
+    NSLog(@"[ZSJ] LWJGL stack = %@  (MC version: %@, frameworks: %@)",
+          stackName, mcVersionForStack ?: @"<unknown>", frameworksDirName);
+
     if (javaHome == nil) {
         UIKit_returnToSplitView();
         BOOL isExecuteJar = [defaultJRETag isEqualToString:@"execute_jar"];
@@ -264,7 +296,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     }
     margv[++margc] = "-Xms128M";
     margv[++margc] = [NSString stringWithFormat:@"-Xmx%dM", allocmem].UTF8String;
-    margv[++margc] = [NSString stringWithFormat:@"-Djava.library.path=%@/Frameworks", NSBundle.mainBundle.bundlePath].UTF8String;
+    margv[++margc] = [NSString stringWithFormat:@"-Djava.library.path=%@/%@", NSBundle.mainBundle.bundlePath, frameworksDirName].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.dir=%@", gameDir].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.home=%s", getenv("POJAV_HOME")].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.timezone=%@", NSTimeZone.localTimeZone.name].UTF8String;
@@ -384,7 +416,26 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     init_loadCustomJvmFlags(&margc, (const char **)margv);
     NSLog(@"[Init] Found JLI lib");
 
-    NSString *classpath = [NSString stringWithFormat:@"%@/*", librariesPath];
+    NSString *classpath;
+    if (useLegacyLWJGL) {
+        // [ZSJ-patch] Legacy LWJGL 3.3.3 stack: use the 3.3.3 lwjgl classes instead
+        //   of the bundled 3.4.1 lwjgl.jar. We must NOT use the "libs/*" wildcard
+        //   here, because it would also pull in the 3.4.1 lwjgl.jar and win the
+        //   classload race (wildcard order is not guaranteed). So: enumerate every
+        //   jar under libs/ EXCEPT lwjgl.jar, then append libs_legacy/* (3.3.3).
+        NSString *legacyLibsPath = [NSString stringWithFormat:@"%@/libs_legacy", NSBundle.mainBundle.bundlePath];
+        NSMutableArray<NSString *> *cpItems = [NSMutableArray array];
+        NSArray<NSString *> *libFiles = [fm contentsOfDirectoryAtPath:librariesPath error:nil];
+        for (NSString *f in libFiles) {
+            if (![f hasSuffix:@".jar"]) continue;
+            if ([f isEqualToString:@"lwjgl.jar"]) continue; // exclude 3.4.1 stack
+            [cpItems addObject:[librariesPath stringByAppendingPathComponent:f]];
+        }
+        [cpItems addObject:[legacyLibsPath stringByAppendingPathComponent:@"lwjgl-legacy.jar"]];
+        classpath = [cpItems componentsJoinedByString:@":"];
+    } else {
+        classpath = [NSString stringWithFormat:@"%@/*", librariesPath];
+    }
     if (launchJar) {
         classpath = [classpath stringByAppendingFormat:@":%@", launchTarget];
     }
